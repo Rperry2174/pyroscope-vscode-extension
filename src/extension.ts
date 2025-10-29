@@ -171,6 +171,7 @@ async function loadProfileFromFile(): Promise<void> {
         console.log(`  - Sample type: ${profile.sampleType}`);
         console.log(`  - Top functions: ${profile.topFunctions.length}`);
         console.log(`  - Files with metrics: ${profile.fileMetrics.size}`);
+        console.log(`  - Call tree roots: ${profile.callTree?.length || 0}`);
 
         // Log file names in the profile
         if (profile.fileMetrics.size > 0) {

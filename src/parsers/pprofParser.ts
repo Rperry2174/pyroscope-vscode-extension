@@ -12,6 +12,7 @@ import {
   FunctionMetrics,
   Location,
 } from '../models/ProfileData';
+import { CallTreeBuilder } from '../models/CallTree';
 
 const gunzip = promisify(gzip);
 
@@ -226,10 +227,16 @@ export class PprofParser {
 
     console.log(`[Pyroscope] Sample type: ${sampleTypeName}, unit: ${sampleUnit}`);
 
+    // Build call tree
+    const callTreeBuilder = new CallTreeBuilder();
+
     for (const sample of pprofData.sample) {
       // Get the value (usually first value is the sample count or time in nanoseconds)
       const sampleValue = sample.value[0] || 0;
       totalSamples += sampleValue;
+
+      // Build the call stack for this sample
+      const stack: Array<{ functionName: string; fileName: string; line: number }> = [];
 
       // Process each location in the stack
       for (const locationId of sample.locationId) {
@@ -248,6 +255,10 @@ export class PprofParser {
         const functionName = pprofData.stringTable[func.name] || 'unknown';
         const lineNumber = line.line;
 
+        // Add to stack for call tree
+        stack.push({ functionName, fileName, line: lineNumber });
+
+        // Keep existing location metrics for heat maps
         const key = `${fileName}:${lineNumber}`;
 
         if (!locationMetricsMap.has(key)) {
@@ -268,6 +279,11 @@ export class PprofParser {
         const metrics = locationMetricsMap.get(key)!;
         metrics.samples += sampleValue;
         metrics.totalTime += sampleValue;
+      }
+
+      // Add this stack to the call tree
+      if (stack.length > 0) {
+        callTreeBuilder.addStack(stack, sampleValue, totalSamples);
       }
     }
 
@@ -355,6 +371,13 @@ export class PprofParser {
 
     topFunctions.sort((a, b) => b.totalTime - a.totalTime);
 
+    // Finalize call tree
+    callTreeBuilder.calculatePercentages(durationNs);
+    callTreeBuilder.sortChildren();
+    const callTree = callTreeBuilder.getRoots();
+
+    console.log(`[Pyroscope] Built call tree with ${callTree.length} root nodes`);
+
     return {
       totalSamples: actualTotalSamples,
       durationNs,
@@ -362,6 +385,7 @@ export class PprofParser {
       sampleType: sampleTypeName || 'cpu',
       fileMetrics: fileMetricsMap,
       topFunctions,
+      callTree,
     };
   }
 

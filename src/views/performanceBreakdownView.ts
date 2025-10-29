@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import { ProfileData, FunctionMetrics } from '../models/ProfileData';
+import { CallTreeNode } from '../models/CallTree';
 import { getDiscreteColor } from '../utils/colorUtils';
 
 export class PerformanceBreakdownProvider
@@ -51,11 +52,16 @@ export class PerformanceBreakdownProvider
     }
 
     if (!element) {
-      // Root level - show summary and top functions
+      // Root level - show summary and call tree roots
       return Promise.resolve(this.getRootItems());
     }
 
-    // If it's a function item, show file/line details
+    // If it's a call tree node, show its children
+    if (element.callTreeNode) {
+      return Promise.resolve(this.getCallTreeChildren(element.callTreeNode));
+    }
+
+    // If it's an old-style function item, show file/line details (backward compat)
     if (element.metrics) {
       return Promise.resolve(this.getFunctionDetails(element.metrics));
     }
@@ -81,6 +87,7 @@ export class PerformanceBreakdownProvider
         '',
         vscode.TreeItemCollapsibleState.None,
         undefined,
+        undefined,
         'clock'
       )
     );
@@ -90,6 +97,7 @@ export class PerformanceBreakdownProvider
         `Total Samples: ${this.profile.totalSamples.toLocaleString()}`,
         '',
         vscode.TreeItemCollapsibleState.None,
+        undefined,
         undefined,
         'graph'
       )
@@ -101,6 +109,7 @@ export class PerformanceBreakdownProvider
         '',
         vscode.TreeItemCollapsibleState.None,
         undefined,
+        undefined,
         'symbol-misc'
       )
     );
@@ -108,42 +117,117 @@ export class PerformanceBreakdownProvider
     // Add separator
     items.push(
       new PerformanceItem(
-        'Top Functions',
+        'Call Tree',
         '',
         vscode.TreeItemCollapsibleState.None,
+        undefined,
         undefined,
         'symbol-function',
         '━'.repeat(40)
       )
     );
 
-    // Add top functions (limited to top 20)
-    const topFunctions = this.profile.topFunctions.slice(0, 20);
-    topFunctions.forEach((func, index) => {
-      const label = `${func.name}`;
-      const description = `${func.totalPercent.toFixed(1)}%`;
-      const tooltip = this.createFunctionTooltip(func);
-
-      const item = new PerformanceItem(
-        label,
-        description,
-        vscode.TreeItemCollapsibleState.Collapsed,
-        func,
-        'symbol-method',
-        undefined,
-        tooltip
-      );
-
-      // Add color indicator based on percentage
-      item.iconPath = new vscode.ThemeIcon(
-        'circle-filled',
-        new vscode.ThemeColor(this.getColorForPercentage(func.totalPercent))
-      );
-
-      items.push(item);
-    });
+    // Add call tree roots
+    if (this.profile.callTree && this.profile.callTree.length > 0) {
+      this.profile.callTree.forEach((node) => {
+        items.push(this.createCallTreeItem(node));
+      });
+    }
 
     return items;
+  }
+
+  /**
+   * Get children of a call tree node
+   */
+  private getCallTreeChildren(node: CallTreeNode): PerformanceItem[] {
+    return node.children.map((child) => this.createCallTreeItem(child));
+  }
+
+  /**
+   * Create a tree item for a call tree node
+   */
+  private createCallTreeItem(node: CallTreeNode): PerformanceItem {
+    // Format: functionName | total%
+    const label = this.formatFunctionName(node.functionName);
+    const description = this.formatPercentage(node.totalPercent);
+
+    const hasChildren = node.children.length > 0;
+    const collapsibleState = hasChildren
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.None;
+
+    const tooltip = this.createCallTreeTooltip(node);
+
+    const item = new PerformanceItem(
+      label,
+      description,
+      collapsibleState,
+      undefined,
+      node,
+      'symbol-method',
+      undefined,
+      tooltip
+    );
+
+    // Add color indicator based on percentage
+    item.iconPath = new vscode.ThemeIcon(
+      'circle-filled',
+      new vscode.ThemeColor(this.getColorForPercentage(node.totalPercent))
+    );
+
+    // Make the item clickable to navigate to source
+    item.command = {
+      command: 'pyroscope.goToSource',
+      title: 'Go to Source',
+      arguments: [node.fileName, node.line, node.functionName],
+    };
+
+    return item;
+  }
+
+  /**
+   * Format percentage with appropriate precision
+   */
+  private formatPercentage(percent: number): string {
+    // Use 2 decimal places for better precision on small values
+    return `${percent.toFixed(2)}%`;
+  }
+
+  /**
+   * Format function name for display
+   */
+  private formatFunctionName(fullName: string): string {
+    // Extract just the function name from patterns like:
+    // - main.(*checkoutService).PlaceOrder -> PlaceOrder
+    // - github.com/path/pkg.FuncName -> FuncName
+    const receiverMatch = fullName.match(/\([^)]+\)\.(\w+)/);
+    if (receiverMatch) {
+      return receiverMatch[1];
+    }
+
+    const parts = fullName.split('.');
+    return parts[parts.length - 1];
+  }
+
+  /**
+   * Create tooltip for call tree node
+   */
+  private createCallTreeTooltip(node: CallTreeNode): string {
+    const selfTime = (node.selfTime / 1e9).toFixed(3);
+    const totalTime = (node.totalTime / 1e9).toFixed(3);
+
+    return [
+      `Function: ${node.functionName}`,
+      `File: ${node.fileName}:${node.line}`,
+      ``,
+      `Self Time: ${selfTime}s (${node.selfPercent.toFixed(2)}%)`,
+      `Total Time: ${totalTime}s (${node.totalPercent.toFixed(2)}%)`,
+      `Samples: ${node.samples.toLocaleString()}`,
+      `Invocations: ${node.invocations.toLocaleString()}`,
+      ``,
+      `Children: ${node.children.length}`,
+    ].join('\n');
   }
 
   /**
@@ -158,6 +242,7 @@ export class PerformanceBreakdownProvider
         '',
         vscode.TreeItemCollapsibleState.None,
         undefined,
+        undefined,
         'file'
       )
     );
@@ -167,6 +252,7 @@ export class PerformanceBreakdownProvider
         `Line: ${metrics.startLine}`,
         '',
         vscode.TreeItemCollapsibleState.None,
+        undefined,
         undefined,
         'symbol-number'
       )
@@ -178,6 +264,7 @@ export class PerformanceBreakdownProvider
         `${metrics.selfPercent.toFixed(2)}%`,
         vscode.TreeItemCollapsibleState.None,
         undefined,
+        undefined,
         'dashboard'
       )
     );
@@ -187,6 +274,7 @@ export class PerformanceBreakdownProvider
         `Total Time: ${(metrics.totalTime / 1e9).toFixed(3)}s`,
         `${metrics.totalPercent.toFixed(2)}%`,
         vscode.TreeItemCollapsibleState.None,
+        undefined,
         undefined,
         'graph-line'
       )
@@ -198,6 +286,7 @@ export class PerformanceBreakdownProvider
         '',
         vscode.TreeItemCollapsibleState.None,
         undefined,
+        undefined,
         'symbol-misc'
       )
     );
@@ -207,6 +296,7 @@ export class PerformanceBreakdownProvider
       'Go to Source',
       '',
       vscode.TreeItemCollapsibleState.None,
+      undefined,
       undefined,
       'go-to-file'
     );
@@ -269,6 +359,7 @@ class PerformanceItem extends vscode.TreeItem {
     public readonly description: string,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly metrics?: FunctionMetrics,
+    public readonly callTreeNode?: CallTreeNode,
     iconId?: string,
     customLabel?: string,
     tooltip?: string
@@ -285,6 +376,8 @@ class PerformanceItem extends vscode.TreeItem {
     // Style based on type
     if (customLabel) {
       this.contextValue = 'separator';
+    } else if (callTreeNode) {
+      this.contextValue = 'callTreeNode';
     } else if (metrics) {
       this.contextValue = 'function';
     } else {

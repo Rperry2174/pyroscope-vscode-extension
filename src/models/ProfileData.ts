@@ -60,6 +60,7 @@ export interface ProfileData {
   timeRange?: TimeRange;
   fileMetrics: Map<string, FileMetrics>;
   topFunctions: FunctionMetrics[];
+  callTree?: import('./CallTree').CallTreeNode[]; // Root nodes of the call tree
 }
 
 /**
