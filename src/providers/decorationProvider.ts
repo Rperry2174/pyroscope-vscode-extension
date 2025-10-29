@@ -297,7 +297,7 @@ export class DecorationProvider {
         range: new vscode.Range(funcDeclLineEnd, funcDeclLineEnd),
         renderOptions: {
           after: {
-            contentText: `  🔥 ${hottestFunction.totalPercent.toFixed(2)}% CPU (hottest in file)`,
+            contentText: `  🔥 ${hottestFunction.totalPercent.toFixed(2)}% CPU (performance bottleneck)`,
             color: '#ff6b6b',
             fontWeight: 'bold',
             fontStyle: 'italic',
