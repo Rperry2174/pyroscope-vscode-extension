@@ -191,26 +191,37 @@ export class PprofParser {
 
   /**
    * Parse a real pprof protobuf file
-   * This will use our protobuf parser to decode the format
+   * This will use the proper @bufbuild/protobuf library to decode the format
    */
   async parseProtobuf(buffer: Buffer): Promise<ProfileData> {
-    const { parsePprofFile } = await import('../utils/pprofProtobuf');
-    const pprofData = await parsePprofFile(buffer);
+    // Use proper protobuf library instead of hand-rolled parser
+    const { ProfileSchema } = await import('../proto/google/v1/profile_pb');
+    const { fromBinary } = await import('@bufbuild/protobuf');
+    const { gunzip } = await import('zlib');
+    const { promisify } = await import('util');
+
+    // Decompress if gzipped
+    let data = buffer;
+    if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+      data = await promisify(gunzip)(buffer);
+    }
+
+    const pprofData = fromBinary(ProfileSchema, data);
 
     // Convert pprof protobuf format to our ProfileData format
     const fileMetricsMap = new Map<string, FileMetrics>();
     const topFunctions: FunctionMetrics[] = [];
 
-    // Build lookup maps
+    // Build lookup maps - convert bigint to number for map keys
     const functionMap = new Map<number, typeof pprofData.function[0]>();
     const locationMap = new Map<number, typeof pprofData.location[0]>();
 
     pprofData.function.forEach((func) => {
-      functionMap.set(func.id, func);
+      functionMap.set(Number(func.id), func);
     });
 
     pprofData.location.forEach((loc) => {
-      locationMap.set(loc.id, loc);
+      locationMap.set(Number(loc.id), loc);
     });
 
     // Aggregate samples by location
@@ -218,11 +229,12 @@ export class PprofParser {
     let totalSamples = 0;
 
     // Determine what the sample values represent based on sample type
+    // Note: All indices are bigint, need to convert to number for array access
     const sampleTypeName = pprofData.sampleType.length > 0
-      ? pprofData.stringTable[pprofData.sampleType[0].type] || 'samples'
+      ? pprofData.stringTable[Number(pprofData.sampleType[0].type)] || 'samples'
       : 'samples';
     const sampleUnit = pprofData.sampleType.length > 0
-      ? pprofData.stringTable[pprofData.sampleType[0].unit] || 'count'
+      ? pprofData.stringTable[Number(pprofData.sampleType[0].unit)] || 'count'
       : 'count';
 
     console.log(`[Pyroscope] Sample type: ${sampleTypeName}, unit: ${sampleUnit}`);
@@ -232,53 +244,81 @@ export class PprofParser {
 
     for (const sample of pprofData.sample) {
       // Get the value (usually first value is the sample count or time in nanoseconds)
-      const sampleValue = sample.value[0] || 0;
+      // Convert bigint to number
+      const sampleValue = Number(sample.value[0] || 0n);
       totalSamples += sampleValue;
 
       // Build the call stack for this sample
       const stack: Array<{ functionName: string; fileName: string; line: number }> = [];
 
+      // Track processed locations to avoid duplicate counting (for recursive functions)
+      const processedLocations = new Set<number>();
+
       // Process each location in the stack
       for (const locationId of sample.locationId) {
-        const location = locationMap.get(locationId);
+        // Convert bigint locationId to number
+        const locationIdNum = Number(locationId);
+
+        // Skip already processed locations (handles recursive calls)
+        if (processedLocations.has(locationIdNum)) {
+          continue;
+        }
+        processedLocations.add(locationIdNum);
+
+        const location = locationMap.get(locationIdNum);
         if (!location || location.line.length === 0) {
           continue;
         }
 
-        const line = location.line[0];
-        const func = functionMap.get(line.functionId);
-        if (!func) {
-          continue;
+        // Handle all line entries (for inline functions), not just the first
+        for (const line of location.line) {
+          const func = functionMap.get(Number(line.functionId));
+          if (!func) {
+            continue;
+          }
+
+          // Convert bigint indices to numbers for string table access
+          const fileName = pprofData.stringTable[Number(func.filename)] || 'unknown';
+          const functionName = pprofData.stringTable[Number(func.name)] || 'unknown';
+          // CRITICAL: Convert bigint line numbers to numbers
+          // line.line = specific line where sample occurred (for heat maps)
+          // func.startLine = function declaration line (for call tree and function scope)
+          const sampleLine = Number(line.line);
+          const functionStartLine = Number(func.startLine);
+
+          // Debug logging for specific functions (disabled)
+          // if (functionName.includes('processOrder') || functionName.includes('PlaceOrder')) {
+          //   console.log(`[Pyroscope DEBUG] Function: ${functionName}`);
+          //   console.log(`  - Line.line (sample line): ${sampleLine}`);
+          //   console.log(`  - Function.startLine (declaration): ${functionStartLine}`);
+          //   console.log(`  - File: ${fileName}`);
+          // }
+
+          // Add to stack for call tree - use function start line for function-level aggregation
+          stack.push({ functionName, fileName, line: functionStartLine });
+
+          // Keep location metrics for heat maps - use sample line for line-level metrics
+          const key = `${fileName}:${sampleLine}`;
+
+          if (!locationMetricsMap.has(key)) {
+            locationMetricsMap.set(key, {
+              location: {
+                line: sampleLine, // Use sample line for heat map decorations
+                functionName,
+                fileName,
+              },
+              selfTime: 0,
+              totalTime: 0,
+              selfPercent: 0,
+              totalPercent: 0,
+              samples: 0,
+            });
+          }
+
+          const metrics = locationMetricsMap.get(key)!;
+          metrics.samples += sampleValue;
+          metrics.totalTime += sampleValue;
         }
-
-        const fileName = pprofData.stringTable[func.filename] || 'unknown';
-        const functionName = pprofData.stringTable[func.name] || 'unknown';
-        const lineNumber = line.line;
-
-        // Add to stack for call tree
-        stack.push({ functionName, fileName, line: lineNumber });
-
-        // Keep existing location metrics for heat maps
-        const key = `${fileName}:${lineNumber}`;
-
-        if (!locationMetricsMap.has(key)) {
-          locationMetricsMap.set(key, {
-            location: {
-              line: lineNumber,
-              functionName,
-              fileName,
-            },
-            selfTime: 0,
-            totalTime: 0,
-            selfPercent: 0,
-            totalPercent: 0,
-            samples: 0,
-          });
-        }
-
-        const metrics = locationMetricsMap.get(key)!;
-        metrics.samples += sampleValue;
-        metrics.totalTime += sampleValue;
       }
 
       // Add this stack to the call tree
@@ -299,11 +339,12 @@ export class PprofParser {
     } else {
       // Sample values are counts, need to multiply by period
       actualTotalSamples = totalSamples;
-      if (pprofData.durationNanos && pprofData.durationNanos > 0) {
-        durationNs = pprofData.durationNanos;
+      // Convert bigint to number
+      if (pprofData.durationNanos && pprofData.durationNanos > 0n) {
+        durationNs = Number(pprofData.durationNanos);
       } else {
         // Estimate duration from samples and period
-        durationNs = totalSamples * (pprofData.period || 10000000);
+        durationNs = totalSamples * (Number(pprofData.period) || 10000000);
       }
       console.log(`[Pyroscope] Sample values are counts, multiplying by period`);
     }
@@ -316,6 +357,7 @@ export class PprofParser {
     console.log(`  - Period: ${pprofData.period}`);
     console.log(`  - Final durationNs: ${durationNs}`);
     console.log(`  - Duration in seconds: ${(durationNs / 1e9).toFixed(2)}s`);
+    console.log(`  - Using proper @bufbuild/protobuf library with bigint support`);
 
     locationMetricsMap.forEach((metrics) => {
       // If values are in nanoseconds, metrics.samples is actually time
@@ -325,7 +367,7 @@ export class PprofParser {
         metrics.selfTime = metrics.totalTime; // Simplified for now
         metrics.selfPercent = metrics.totalPercent;
         // Update samples to be a count estimate (for display purposes)
-        metrics.samples = Math.round(metrics.totalTime / (pprofData.period || 10000000));
+        metrics.samples = Math.round(metrics.totalTime / (Number(pprofData.period) || 10000000));
       } else {
         // Values are counts
         metrics.totalPercent = (metrics.samples / actualTotalSamples) * 100;
@@ -381,7 +423,7 @@ export class PprofParser {
     return {
       totalSamples: actualTotalSamples,
       durationNs,
-      sampleRate: pprofData.period || 100,
+      sampleRate: Number(pprofData.period) || 100,
       sampleType: sampleTypeName || 'cpu',
       fileMetrics: fileMetricsMap,
       topFunctions,
