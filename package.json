@@ -1,0 +1,151 @@
+{
+  "name": "pyroscope-profiler",
+  "displayName": "Pyroscope Performance Profiler",
+  "description": "Continuous profiling visualization with inline performance metrics and heat maps",
+  "version": "0.1.0",
+  "publisher": "pyroscope",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pyroscope.loadProfile",
+        "title": "Pyroscope: Load Profile from File",
+        "icon": "$(flame)"
+      },
+      {
+        "command": "pyroscope.selectTimeRange",
+        "title": "Pyroscope: Select Time Range",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "pyroscope.toggleHeatmap",
+        "title": "Pyroscope: Toggle Heat Map",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "pyroscope.toggleMetrics",
+        "title": "Pyroscope: Toggle Inline Metrics",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "pyroscope.refreshBreakdown",
+        "title": "Pyroscope: Refresh Performance Breakdown",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pyroscope.goToSource",
+        "title": "Pyroscope: Go to Source"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pyroscope-sidebar",
+          "title": "Pyroscope Profiler",
+          "icon": "resources/pyroscope-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "pyroscope-sidebar": [
+        {
+          "id": "pyroscope.performanceBreakdown",
+          "name": "Performance Breakdown",
+          "icon": "$(flame)",
+          "contextualTitle": "Performance Breakdown"
+        },
+        {
+          "id": "pyroscope.timeRange",
+          "name": "Time Range",
+          "icon": "$(clock)",
+          "contextualTitle": "Time Range Selector"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pyroscope.performanceBreakdown",
+        "contents": "No profile loaded.\n[Load Profile](command:pyroscope.loadProfile)\n[Select Time Range](command:pyroscope.selectTimeRange)"
+      }
+    ],
+    "configuration": {
+      "title": "Pyroscope Profiler",
+      "properties": {
+        "pyroscope.heatmap.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable heat map visualization of performance bottlenecks"
+        },
+        "pyroscope.inlineMetrics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline performance metrics next to code lines"
+        },
+        "pyroscope.heatmap.colorScheme": {
+          "type": "string",
+          "enum": [
+            "red-yellow-green",
+            "thermal",
+            "grayscale"
+          ],
+          "default": "red-yellow-green",
+          "description": "Color scheme for heat map visualization"
+        },
+        "pyroscope.heatmap.intensity": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Background color intensity for heat map (0.1 = subtle, 1.0 = bold)"
+        },
+        "pyroscope.metrics.threshold": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "description": "Minimum percentage threshold to display metrics (0-100)"
+        },
+        "pyroscope.metrics.showSelf": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show self time in inline metrics"
+        },
+        "pyroscope.metrics.showTotal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show total/cumulative time in inline metrics"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "eslint": "^8.x",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "protobufjs": "^7.5.4"
+  }
+}
