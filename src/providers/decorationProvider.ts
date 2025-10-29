@@ -18,6 +18,7 @@ export class DecorationProvider {
   private heatMapDecorations = new Map<number, vscode.TextEditorDecorationType>();
   private metricsDecorationType: vscode.TextEditorDecorationType;
   private functionScopeDecorationType: vscode.TextEditorDecorationType;
+  private functionLabelDecorationType: vscode.TextEditorDecorationType;
   private parser: PprofParser;
   private currentProfile: ProfileData | null = null;
 
@@ -36,6 +37,14 @@ export class DecorationProvider {
     this.functionScopeDecorationType = vscode.window.createTextEditorDecorationType({
       backgroundColor: 'rgba(255, 0, 0, 0.08)', // Light red with 8% opacity
       isWholeLine: true,
+    });
+
+    // Create decoration type for function label (percentage indicator)
+    this.functionLabelDecorationType = vscode.window.createTextEditorDecorationType({
+      after: {
+        margin: '0 0 0 1em',
+        textDecoration: 'none',
+      },
     });
   }
 
@@ -235,6 +244,7 @@ export class DecorationProvider {
   ): void {
     // Clear previous highlights
     editor.setDecorations(this.functionScopeDecorationType, []);
+    editor.setDecorations(this.functionLabelDecorationType, []);
 
     if (!this.currentProfile?.callTree) {
       return;
@@ -278,6 +288,24 @@ export class DecorationProvider {
       };
 
       editor.setDecorations(this.functionScopeDecorationType, [decoration]);
+
+      // Add inline label showing the percentage on the function declaration line
+      const funcDeclLine = functionRange.start.line;
+      const funcDeclLineEnd = editor.document.lineAt(funcDeclLine).range.end;
+
+      const labelDecoration: vscode.DecorationOptions = {
+        range: new vscode.Range(funcDeclLineEnd, funcDeclLineEnd),
+        renderOptions: {
+          after: {
+            contentText: `  🔥 ${hottestFunction.totalPercent.toFixed(2)}% CPU (hottest in file)`,
+            color: '#ff6b6b',
+            fontWeight: 'bold',
+            fontStyle: 'italic',
+          },
+        },
+      };
+
+      editor.setDecorations(this.functionLabelDecorationType, [labelDecoration]);
     }
   }
 
@@ -414,6 +442,7 @@ export class DecorationProvider {
     this.clearHeatMap(editor);
     editor.setDecorations(this.metricsDecorationType, []);
     editor.setDecorations(this.functionScopeDecorationType, []);
+    editor.setDecorations(this.functionLabelDecorationType, []);
   }
 
   /**
@@ -433,6 +462,7 @@ export class DecorationProvider {
   dispose(): void {
     this.metricsDecorationType.dispose();
     this.functionScopeDecorationType.dispose();
+    this.functionLabelDecorationType.dispose();
     this.heatMapDecorations.forEach((d) => d.dispose());
     this.heatMapDecorations.clear();
   }
