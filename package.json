@@ -46,6 +46,16 @@
       {
         "command": "pyroscope.goToSource",
         "title": "Pyroscope: Go to Source"
+      },
+      {
+        "command": "pyroscope.queryServer",
+        "title": "Pyroscope: Query Server",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "pyroscope.configureServer",
+        "title": "Pyroscope: Configure Server Settings",
+        "icon": "$(settings-gear)"
       }
     ],
     "viewsContainers": {
@@ -76,7 +86,7 @@
     "viewsWelcome": [
       {
         "view": "pyroscope.performanceBreakdown",
-        "contents": "No profile loaded.\n[Load Profile](command:pyroscope.loadProfile)\n[Select Time Range](command:pyroscope.selectTimeRange)"
+        "contents": "No profile loaded.\n[Load Profile from File](command:pyroscope.loadProfile)\n[Query Pyroscope Server](command:pyroscope.queryServer)\n\n[Configure Server Settings](command:pyroscope.configureServer)"
       }
     ],
     "configuration": {
@@ -124,6 +134,37 @@
           "type": "boolean",
           "default": true,
           "description": "Show total/cumulative time in inline metrics"
+        },
+        "pyroscope.server.url": {
+          "type": "string",
+          "default": "",
+          "description": "Pyroscope server URL (e.g., https://profiles-prod-001.grafana.net or http://localhost:4040)"
+        },
+        "pyroscope.server.username": {
+          "type": "string",
+          "default": "",
+          "description": "Username for Pyroscope server authentication (Grafana Cloud stack user)"
+        },
+        "pyroscope.server.password": {
+          "type": "string",
+          "default": "",
+          "description": "Password/API key for Pyroscope server authentication (Grafana Cloud API key)",
+          "secret": true
+        },
+        "pyroscope.server.serviceName": {
+          "type": "string",
+          "default": "",
+          "description": "Service name for Pyroscope queries (required for querying server). Will be used to construct query: process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"<value>\"}"
+        },
+        "pyroscope.server.query": {
+          "type": "string",
+          "default": "",
+          "description": "Pyroscope query string (profile type and label selectors). If not set, will be constructed from serviceName. Override this if you need a custom query format."
+        },
+        "pyroscope.server.useConnectAPI": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use Connect API (returns pprof format) instead of legacy HTTP API"
         }
       }
     }
