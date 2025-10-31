@@ -2,8 +2,9 @@
 
 Bring continuous profiling directly into your editor with inline performance metrics and visual heat maps. Never guess which code is slow again.
 
-## Features
+![multi-agent](https://github.com/user-attachments/assets/ef1115e0-17c3-4a9e-b613-34d1bf82648d)
 
+## Features
 ### 1. Heat Map Visualization
 Lines of code are highlighted with background colors based on their performance impact:
 - **Red zones**: Critical bottlenecks (>10% of execution time)
@@ -88,22 +89,12 @@ pprof.StartCPUProfile(f)
 defer pprof.StopCPUProfile()
 ```
 
-#### With Pyroscope Agent
+#### With Pyroscope SDKs
 
-```bash
-# For Go
-pyroscope exec ./your-app
+See Pyroscope docs for how to collect profiling data with [Pyroscope SDK](https://grafana.com/docs/pyroscope/next/configure-client/) or [eBPF profiling](https://grafana.com/docs/pyroscope/next/configure-client/grafana-alloy/ebpf/)
 
-# Or integrated
-import "github.com/grafana/pyroscope-go"
-
-pyroscope.Start(pyroscope.Config{
-    ApplicationName: "my-app",
-    ServerAddress:   "http://pyroscope:4040",
-})
-```
-
-Then download the profile from Pyroscope UI or API.
+Then download the profile from Pyroscope UI or [API](https://github.com/grafana/pyroscope/blob/main/examples/api/query.py).
+<img width="1" height="1" alt="image" src="https://github.com/user-attachments/assets/c7bf5949-f1df-459d-9417-934c3e924421" />
 
 ## Configuration
 
@@ -130,28 +121,6 @@ Open VS Code Settings and search for "Pyroscope":
   "pyroscope.metrics.threshold": 1.0     // minimum % to display
 }
 ```
-
-## Architecture
-
-The extension is designed with modularity in mind:
-
-```
-src/
-├── extension.ts              # Main entry point
-├── models/
-│   └── ProfileData.ts        # Data structures
-├── parsers/
-│   └── pprofParser.ts        # Parse .pb.gz files
-├── providers/
-│   └── decorationProvider.ts # Heat maps & inline metrics
-├── views/
-│   ├── performanceBreakdownView.ts  # Sidebar tree view
-│   └── timeRangeView.ts             # Time range selector
-└── utils/
-    ├── colorUtils.ts         # Heat map color schemes
-    └── pprofProtobuf.ts      # Protobuf decoder
-```
-
 ### Key Components
 
 1. **PprofParser**: Reads and parses `.pb.gz` (gzipped protobuf) files
@@ -165,7 +134,7 @@ src/
 - [x] Heat map visualization
 - [x] Inline performance metrics
 - [x] Performance breakdown sidebar
-- [ ] Connect to live Pyroscope server
+- [x] Connect to live Pyroscope server
 - [ ] Real-time profiling with time range selection
 - [ ] Diff two profiles to see changes
 - [ ] Flame graph visualization
